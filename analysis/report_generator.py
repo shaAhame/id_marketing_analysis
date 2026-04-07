@@ -53,7 +53,7 @@ def _tbl_style(header_color=BLUE):
         ('LEFTPADDING', (0,0), (-1,-1), 8),
     ])
 
-def generate_pdf_report(meta_df, tiktok_df, ga4_df, analyst, period, recs, alerts):
+def generate_pdf_report(meta_df, tiktok_df, ga4_df, analyst, period, recs, alerts, extra=None):
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(buf, pagesize=A4,
                               leftMargin=2*cm, rightMargin=2*cm,
@@ -246,7 +246,7 @@ def generate_pdf_report(meta_df, tiktok_df, ga4_df, analyst, period, recs, alert
     return buf.read()
 
 
-def generate_excel_report(meta_df, tiktok_df, ga4_df, period, alerts):
+def generate_excel_report(meta_df, tiktok_df, ga4_df, period, alerts, extra=None):
     buf = io.BytesIO()
     wb  = Workbook()
     wb.remove(wb.active)
@@ -357,15 +357,23 @@ def generate_excel_report(meta_df, tiktok_df, ga4_df, period, alerts):
     if meta_df is not None:
         wm = wb.create_sheet("Meta_Raw")
         write_df(wm, meta_df, '#378ADD')
-
     if tiktok_df is not None:
         wt = wb.create_sheet("TikTok_Raw")
         write_df(wt, tiktok_df, '#D4537E')
-
     if ga4_df is not None:
-        wg = wb.create_sheet("Website_Raw")
+        wg = wb.create_sheet("Website_Channel")
         write_df(wg, ga4_df, '#3B6D11')
-
+    if extra:
+        for key, sname, color in [
+            ('traffic_source','Website_Source','#3B6D11'),
+            ('users','Website_Users','#3B6D11'),
+            ('pages','Website_Pages','#27500A'),
+            ('events','Website_Events','#27500A'),
+        ]:
+            df_ex = extra.get(key)
+            if df_ex is not None:
+                ws_ex = wb.create_sheet(sname)
+                write_df(ws_ex, df_ex, color)
     wb.save(buf)
     buf.seek(0)
     return buf.read()
