@@ -4,6 +4,11 @@ Renders charts as ReportLab Image objects using matplotlib.
 No kaleido needed. Drop this into analysis/ folder.
 """
 import io
+import os
+
+# Set backend before any other matplotlib import
+os.environ.setdefault('MPLBACKEND', 'Agg')
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
