@@ -8,7 +8,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, Image, PageBreak
+    HRFlowable, Image, PageBreak, KeepTogether
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from openpyxl import Workbook
@@ -48,6 +48,7 @@ def PS(name, fs=10, bold=False, color=None, align=TA_LEFT, sp=4, lft=0):
         spaceAfter=sp, leading=fs+4, alignment=align, leftIndent=lft)
 
 def sp(n=8):    return Spacer(1, n)
+def shorten(s, n=30): s=str(s); return s[:n]+'…' if len(s)>n else s
 def hr(W):      return HRFlowable(width=W, color=MGREY, thickness=0.5)
 
 def mktbl(data, cw, hcol=BLUE):
@@ -403,193 +404,277 @@ def generate_meta_pdf(meta_df, analyst, period, alerts=None, meta_prev=None):
 # ═════════════════════════════════════════════════════════════════════════════
 # TIKTOK PDF REPORT
 # ═════════════════════════════════════════════════════════════════════════════
-def generate_tiktok_pdf(tiktok_df, analyst, period, alerts=None, tt_prev=None):
-    buf = io.BytesIO()
-    W   = A4[0] - 4*cm
-    Wcm = W / cm
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-          leftMargin=2*cm, rightMargin=2*cm, topMargin=1.5*cm, bottomMargin=2*cm)
+def generate_tiktok_pdf(df, analyst, period, alerts=None, prev_df=None):
+    buf  = io.BytesIO()
+    W    = A4[0] - 4*cm
+    Wcm  = W / cm
+    doc  = SimpleDocTemplate(buf, pagesize=A4,
+           leftMargin=2*cm, rightMargin=2*cm,
+           topMargin=1.5*cm, bottomMargin=2*cm)
     story = []
 
+    # ── HEADER ──
     story += [header_tbl("iDealz TikTok Ads Report",
-                          "Video Performance & Engagement Analysis",
-                          period, analyst, W), sp(12)]
+                         "Video Performance & Engagement Analysis",
+                         period, analyst, W), sp(14)]
 
+    # ── ALERTS ──
     if alerts:
         ta = [a for a in alerts if 'tiktok' in a.get('title','').lower()]
         if ta:
             story += [banner("⚠  Alerts", RED, W), sp(6)]
-            al = [['#','Alert','Action']]
-            for i,a in enumerate(ta,1): al.append([str(i), a['title'], a['msg']])
-            story += [mktbl(al,[0.5*cm,5*cm,W-5.5*cm],RED), sp(12)]
+            al = [['#','Alert','Action Required']]
+            for i,a in enumerate(ta,1):
+                al.append([str(i),
+                    Paragraph(a['title'], PS('at',8,False)),
+                    Paragraph(a['msg'],   PS('am',8,False))])
+            story += [mktbl(al,[1*cm, 5.5*cm, W-6.5*cm], RED), sp(14)]
 
-    # ── KPIs ──
-    ts  = tiktok_df['Cost'].sum()
-    tv  = int(tiktok_df['Video views'].sum())
-    aw  = tiktok_df['Average play time per video view'].mean()
-    ac  = tiktok_df['100% video view rate'].mean()*100
-    td  = int(tiktok_df['Clicks (destination)'].sum())
-    ti  = int(tiktok_df['Impressions'].sum())
-    tr  = int(tiktok_df['Reach'].sum())
-    tf  = tiktok_df['Frequency'].mean()
-    tall= int(tiktok_df['Clicks (all)'].sum())
+    # ── OVERVIEW KPIs ──
+    ts  = df['Cost'].sum()
+    tv  = int(df['Video views'].sum())
+    aw  = df['Average play time per video view'].mean()
+    ac  = df['100% video view rate'].mean()*100
+    td  = int(df['Clicks (destination)'].sum())
+    ti  = int(df['Impressions'].sum())
+    tr  = int(df['Reach'].sum())
+    tf  = df['Frequency'].mean()
+    tall= int(df['Clicks (all)'].sum())
 
     story += [banner("📊  Performance Overview", PINK, W), sp(8)]
     story.append(kpi_row([
-        ('Total Spend',     f"${ts:,.2f}",  '—',                   colors.HexColor('#6B7280')),
-        ('Video Views',     f"{tv:,}",       '—',                   colors.HexColor('#6B7280')),
+        ('Total Spend',     f"${ts:,.2f}",  '—',                    colors.HexColor('#6B7280')),
+        ('Video Views',     f"{tv:,}",       '—',                    colors.HexColor('#6B7280')),
         ('Avg Watch Time',  f"{aw:.1f}s",    '✅ Good' if aw>=6 else '⚠ Low', GREEN if aw>=6 else AMBER),
-        ('Completion Rate', f"{ac:.1f}%",    '⚠ Low'  if ac<15 else '✅ OK', RED   if ac<15 else GREEN),
+        ('Completion Rate', f"{ac:.1f}%",    '⚠ Low'  if ac<15 else '✅ OK',  RED   if ac<15 else GREEN),
         ('Dest. Clicks',    str(td),         '❌ Critical' if td==0 else '✅', RED   if td==0 else GREEN),
-        ('Avg Frequency',   f"{tf:.2f}",     '—',                   colors.HexColor('#6B7280')),
+        ('Avg Frequency',   f"{tf:.2f}",     '—',                    colors.HexColor('#6B7280')),
     ], W))
     story.append(sp(6))
+
     kpi2 = [['Total Impressions','Total Reach','Clicks (all)','Avg Frequency']]
     kpi2.append([f"{ti:,}", f"{tr:,}", f"{tall:,}", f"{tf:.2f}"])
-    story += [mktbl(kpi2,[W/4]*4,PINK), sp(8)]
+    story += [mktbl(kpi2,[W/4]*4, PINK), sp(8)]
 
-    if td==0:
+    if td == 0:
         story.append(Paragraph(
-            "❌ CRITICAL: Zero destination clicks — nobody clicked to WhatsApp or idealz.lk. "
-            "Add destination URL + CTA button in ad settings. Move CTA to first 3 seconds of video.",
-            PS('crit',10,False,RED,sp=8)))
+            "❌  CRITICAL: Zero destination clicks — nobody clicked to WhatsApp or idealz.lk "
+            "from any TikTok ad. Fix: (1) Set destination URL in every ad.  "
+            "(2) Add 'Message Us' CTA button.  (3) Move CTA text to first 3 seconds of video.",
+            PS('crit',9,False,RED,sp=10,lft=4)))
 
-    if tt_prev is not None:
+    # vs previous
+    if prev_df is not None:
         story.append(Paragraph("vs Previous Period:", PS('pv',10,True,NAVY,sp=4)))
-        pv_ts=tt_prev['Cost'].sum(); pv_tv=int(tt_prev['Video views'].sum()); pv_tr=int(tt_prev['Reach'].sum())
-        prev_data=[['Metric','This Period','Previous','Change']]
+        pv_ts=prev_df['Cost'].sum(); pv_tv=int(prev_df['Video views'].sum()); pv_tr=int(prev_df['Reach'].sum())
+        prev_tbl=[['Metric','This Period','Previous Period','Change']]
         for m,cv,pv in [('Spend (USD)',ts,pv_ts),('Video Views',tv,pv_tv),('Reach',tr,pv_tr)]:
             chg = f"{(cv-pv)/pv*100:+.1f}%" if pv>0 else '—'
             fv  = f"${cv:,.2f}" if 'Spend' in m else f"{int(cv):,}"
             fp  = f"${pv:,.2f}" if 'Spend' in m else f"{int(pv):,}"
-            prev_data.append([m, fv, fp, chg])
-        story += [mktbl(prev_data,[4*cm,4*cm,4*cm,W-12*cm],PINK), sp(10)]
+            prev_tbl.append([m,fv,fp,chg])
+        story += [mktbl(prev_tbl,[4*cm,4*cm,4*cm,W-12*cm],PINK), sp(10)]
 
-    # ── Campaign Breakdown ──
-    story += [banner("📂  Campaign Breakdown", PINK, W), sp(8)]
-    camp = tiktok_df.groupby('Campaign name').agg(
-        Spend=('Cost','sum'), Impressions=('Impressions','sum'), Reach=('Reach','sum'),
-        Avg_Freq=('Frequency','mean'), Video_Views=('Video views','sum'),
+    story.append(sp(4))
+
+    # ── CAMPAIGN BREAKDOWN ──
+    camp = df.groupby('Campaign name').agg(
+        Spend=('Cost','sum'), Impressions=('Impressions','sum'),
+        Reach=('Reach','sum'), Avg_Freq=('Frequency','mean'),
+        Video_Views=('Video views','sum'),
         Avg_Watch=('Average play time per video view','mean'),
         Avg_Comp=('100% video view rate','mean'),
         Dest_Clicks=('Clicks (destination)','sum'),
     ).round(2).reset_index()
     camp['Comp_%'] = (camp['Avg_Comp']*100).round(1)
 
+    hw = Wcm/2 - 0.5   # half width in cm
     c1 = bar_chart(camp['Campaign name'].tolist(), camp['Spend'].tolist(),
                    'Spend by Campaign (USD)', color='#D4537E',
-                   fmt='${:.2f}', W=Wcm/2-1, H=6)
+                   fmt='${:.2f}', W=hw, H=6)
     c2 = bar_chart(camp['Campaign name'].tolist(), camp['Avg_Watch'].tolist(),
                    'Avg Watch Time (seconds)', color='#1D9E75',
-                   fmt='{:.1f}s', W=Wcm/2-1, H=6)
-    story += [two_charts(c1, c2), sp(6)]
-
+                   fmt='{:.1f}s', W=hw, H=6)
     c3 = bar_chart(camp['Campaign name'].tolist(), camp['Comp_%'].tolist(),
                    'Completion Rate (%)', color='#BA7517',
-                   fmt='{:.1f}%', W=Wcm/2-1, H=6)
+                   fmt='{:.1f}%', W=hw, H=6)
     c4 = bar_chart(camp['Campaign name'].tolist(), camp['Video_Views'].tolist(),
                    'Video Views by Campaign', color='#D4537E',
-                   W=Wcm/2-1, H=6)
-    story += [two_charts(c3, c4), sp(6)]
+                   W=hw, H=6)
 
-    cr = [['Campaign','Spend (USD)','Impressions','Video Views','Avg Watch','Completion','Dest. Clicks']]
+    # Campaign table — 7 cols, precise widths
+    cr = [['Campaign','Spend\n(USD)','Impressions','Video\nViews','Watch\nTime','Comp\n%','Dest\nClicks']]
     for _,r in camp.iterrows():
-        cr.append([str(r['Campaign name'])[:28], f"${r['Spend']:,.2f}", f"{int(r['Impressions']):,}",
-            f"{int(r['Video_Views']):,}", f"{r['Avg_Watch']:.1f}s",
-            f"{r['Comp_%']:.1f}%", str(int(r['Dest_Clicks']))])
-    story += [mktbl(cr,[4*cm,2.5*cm,2.5*cm,2.5*cm,2*cm,2.5*cm,W-16*cm],PINK), sp(12)]
+        cr.append([
+            Paragraph(shorten(r['Campaign name'],22), PS('cn',8,False)),
+            f"${r['Spend']:,.2f}",
+            f"{int(r['Impressions']):,}",
+            f"{int(r['Video_Views']):,}",
+            f"{r['Avg_Watch']:.1f}s",
+            f"{r['Comp_%']:.1f}%",
+            str(int(r['Dest_Clicks'])),
+        ])
+    # col widths sum = W
+    cr_cw = [3.8*cm, 2.2*cm, 2.5*cm, 2.2*cm, 1.8*cm, 1.8*cm, W-14.3*cm]
 
-    # ── Video Metrics Audit ──
-    story += [banner("🎬  Video Metrics Audit — Completion & Watch Time", PINK, W), sp(8)]
-    tiktok_df['comp_%'] = (tiktok_df['100% video view rate']*100).round(1)
-    tiktok_df['2sec_%'] = (tiktok_df['2-second video views']/tiktok_df['Video views'].replace(0,1)*100).round(1)
-    tiktok_df['6sec_%'] = (tiktok_df['6-second video views']/tiktok_df['Video views'].replace(0,1)*100).round(1)
+    story += [
+        KeepTogether([banner("📂  Campaign Breakdown", PINK, W), sp(8),
+                      two_charts(c1,c2), sp(6),
+                      two_charts(c3,c4), sp(6),
+                      mktbl(cr, cr_cw, PINK)]),
+        sp(14)
+    ]
 
-    tt_s = tiktok_df.sort_values('Average play time per video view', ascending=False)
-    ad_labels = [str(n)[:20]+'…' if len(str(n))>20 else str(n) for n in tt_s['Ad name']]
+    # ── VIDEO METRICS AUDIT ──
+    df['comp_%'] = (df['100% video view rate']*100).round(1)
+    df['2sec_%'] = (df['2-second video views']/df['Video views'].replace(0,1)*100).round(1)
+    df['6sec_%'] = (df['6-second video views']/df['Video views'].replace(0,1)*100).round(1)
+    tt_s = df.sort_values('Average play time per video view', ascending=False)
 
-    c1 = color_bar(ad_labels, tt_s['Average play time per video view'].tolist(),
+    ad_labels_short = [shorten(n, 18) for n in tt_s['Ad name']]
+
+    c1 = color_bar(ad_labels_short, tt_s['Average play time per video view'].tolist(),
                    'Avg Watch Time per Ad (seconds)', cmap_name='RdYlGn',
-                   fmt='{:.1f}s', W=Wcm/2-1, H=max(7, len(tiktok_df)*0.6), rotate=30)
-    c2 = color_bar(tiktok_df.sort_values('comp_%',ascending=False)['Ad name'].str[:20].tolist(),
-                   tiktok_df.sort_values('comp_%',ascending=False)['comp_%'].tolist(),
+                   fmt='{:.1f}s', W=hw, H=max(7, len(df)*0.55), rotate=35)
+    c2 = color_bar([shorten(n,18) for n in df.sort_values('comp_%',ascending=False)['Ad name']],
+                   df.sort_values('comp_%',ascending=False)['comp_%'].tolist(),
                    'Completion Rate per Ad (%)', cmap_name='RdYlGn',
-                   fmt='{:.1f}%', W=Wcm/2-1, H=max(7, len(tiktok_df)*0.6), rotate=30)
-    story += [two_charts(c1, c2), sp(6)]
+                   fmt='{:.1f}%', W=hw, H=max(7, len(df)*0.55), rotate=35)
 
-    # 2sec vs 6sec grouped bar
-    tt2 = tiktok_df.sort_values('2sec_%',ascending=False)
-    c3 = grouped_bar(
-        [str(n)[:18] for n in tt2['Ad name']],
+    tt2 = df.sort_values('2sec_%', ascending=False)
+    c3  = grouped_bar(
+        [shorten(n,14) for n in tt2['Ad name']],
         {'2-sec %': tt2['2sec_%'].tolist(), '6-sec %': tt2['6sec_%'].tolist()},
-        '2-second vs 6-second View Rate per Ad',
-        W=Wcm, H=max(6, len(tiktok_df)*0.6), rotate=30)
-    story += [c3, sp(6)]
+        '2-second vs 6-second View Rate per Ad (%)',
+        W=Wcm, H=max(6, len(df)*0.55), rotate=35)
 
-    vm_rows = [['Ad Name','Campaign','Watch Time','Completion','2-sec %','6-sec %','Dest. Clicks']]
+    # Video metrics table — 7 cols
+    vm_rows = [['Ad Name','Campaign','Watch\nTime','Comp\n%','2-sec\n%','6-sec\n%','Dest\nClicks']]
     for _,r in tt_s.iterrows():
-        nm = str(r['Ad name'])[:28]+'…' if len(str(r['Ad name']))>28 else str(r['Ad name'])
-        vm_rows.append([nm, str(r['Campaign name'])[:18],
-            f"{r['Average play time per video view']:.1f}s", f"{r['comp_%']:.1f}%",
-            f"{r['2sec_%']:.1f}%", f"{r['6sec_%']:.1f}%", str(int(r['Clicks (destination)']))])
-    story += [mktbl(vm_rows,[3.5*cm,2.5*cm,2.5*cm,2.5*cm,2*cm,2*cm,W-15*cm],PINK), sp(6)]
-    story.append(Paragraph(
-        "Benchmark: 0–3s Very weak  |  3–6s Needs work  |  6–10s Good  |  10s+ Excellent  |  Completion: 25%+ Good",
-        PS('bm',8,False,AMBER,sp=8)))
-    story.append(sp(8))
+        vm_rows.append([
+            Paragraph(shorten(r['Ad name'],26), PS('an',7.5,False)),
+            Paragraph(shorten(r['Campaign name'],18), PS('cn',7.5,False)),
+            f"{r['Average play time per video view']:.1f}s",
+            f"{r['comp_%']:.1f}%",
+            f"{r['2sec_%']:.1f}%",
+            f"{r['6sec_%']:.1f}%",
+            str(int(r['Clicks (destination)'])),
+        ])
+    # col widths: Ad name gets most space
+    vm_cw = [3.8*cm, 2.8*cm, 1.5*cm, 1.5*cm, 1.5*cm, 1.5*cm, W-12.6*cm]
 
-    # ── Funnel ──
-    story += [banner("🔻  Video Engagement Funnel", PINK, W), sp(8)]
-    sec2 = int(tiktok_df['2-second video views'].sum())
-    sec6 = int(tiktok_df['6-second video views'].sum())
-    full = int((tiktok_df['Video views']*tiktok_df['100% video view rate']).sum())
+    bm_para = Paragraph(
+        "Benchmark:  0–3s Very weak  ·  3–6s Needs work  ·  6–10s Good  ·  10s+ Excellent  ·  Completion target: 25%+",
+        PS('bm',8,False,AMBER,sp=6))
+
+    drop_note = Paragraph(
+        "Drop-off summary:  "
+        f"Avg 2-sec view rate: {df['2sec_%'].mean():.1f}%  ·  "
+        f"Avg 6-sec view rate: {df['6sec_%'].mean():.1f}%  ·  "
+        f"Avg full completion: {df['comp_%'].mean():.1f}%",
+        PS('dn',9,False,NAVY,sp=6))
+
+    story += [
+        KeepTogether([banner("🎬  Video Metrics Audit — Completion & Watch Time", PINK, W), sp(8),
+                      two_charts(c1,c2), sp(6)]),
+        c3, sp(6),
+        mktbl(vm_rows, vm_cw, PINK),
+        sp(4), drop_note, bm_para,
+        sp(12)
+    ]
+
+    # ── VIDEO ENGAGEMENT FUNNEL ──
+    sec2   = int(df['2-second video views'].sum())
+    sec6   = int(df['6-second video views'].sum())
+    full_v = int((df['Video views']*df['100% video view rate']).sum())
     stages = ['Impressions','Video Views','2-sec Views','6-sec Views','Full Views','Dest. Clicks']
-    vals   = [ti, tv, sec2, sec6, full, td]
-    c_funnel = funnel_chart(stages, vals, 'Video Engagement Funnel', color='#D4537E', W=Wcm, H=9)
-    story += [c_funnel, sp(6)]
+    vals   = [ti, tv, sec2, sec6, full_v, td]
+
+    interps = [
+        '—',
+        'Strong view-through rate (97%)',
+        'Initial hook strength',
+        '⚠ Drop-off here — CTA too late' if sec6<sec2*0.4 else 'Decent retention',
+        '❌ Very low — move CTA to first 3s' if ac<10 else 'Below average',
+        '❌ Fix destination URL' if td==0 else '✅ Clicks recorded',
+    ]
     fn_rows = [['Stage','Count','% of Impressions','Interpretation']]
-    interps = ['—','View-through rate','Initial hook strength',
-               '⚠ Drop-off — CTA too late' if sec6<sec2*0.5 else 'Decent retention',
-               '❌ Very low — move CTA earlier' if ac<10 else 'OK',
-               '❌ Fix destination URL' if td==0 else '✅ Clicks happening']
     for s,v,interp in zip(stages,vals,interps):
-        fn_rows.append([s, f"{v:,}", f"{v/ti*100:.2f}%" if ti>0 else '—', interp])
-    story += [mktbl(fn_rows,[3*cm,3*cm,3.5*cm,W-9.5*cm],PINK), sp(12)]
+        fn_rows.append([s, f"{v:,}", f"{v/ti*100:.2f}%" if ti>0 else '—',
+                        Paragraph(interp, PS('fi',8,False))])
 
-    # ── Destination CTR ──
-    story += [banner("🔗  Destination CTR Audit", PINK, W), sp(8)]
-    story.append(Paragraph(
-        "All destination CTR values are 0.0000 — no clicks to WhatsApp or idealz.lk from any ad. "
-        "Fix: (1) Set destination URL in every ad. (2) Add CTA button. (3) Move CTA to first 3 seconds.",
-        PS('ctr_note',9,False,RED,sp=6)) if td==0 else sp(2))
-    ctr_rows = [['Ad Name','Campaign','Dest. CTR','Dest. Clicks','Impressions','Spend']]
-    for _,r in tiktok_df.sort_values('Cost',ascending=False).iterrows():
-        nm = str(r['Ad name'])[:32]+'…' if len(str(r['Ad name']))>32 else str(r['Ad name'])
-        ctr_rows.append([nm, str(r['Campaign name'])[:20],
-            f"{r['CTR (destination)']:.4f}", str(int(r['Clicks (destination)'])),
-            f"{int(r['Impressions']):,}", f"${r['Cost']:,.2f}"])
-    story += [mktbl(ctr_rows,[4*cm,3*cm,2.5*cm,2.5*cm,2.5*cm,W-14.5*cm],PINK), sp(12)]
+    fn_cw  = [3*cm, 3*cm, 3.5*cm, W-9.5*cm]
+    c_funnel = funnel_chart(stages, vals, 'Video Engagement Funnel',
+                             color='#D4537E', W=Wcm, H=9)
 
-    # ── Monthly Benchmarks ──
-    story += [banner("📈  Monthly Benchmarks Summary", PINK, W), sp(8)]
-    story.append(kpi_row([
-        ('Total Spend',     f"${ts:,.2f}", '—', colors.HexColor('#6B7280')),
-        ('Total Impressions',f"{ti:,}",    '—', colors.HexColor('#6B7280')),
-        ('Total Reach',     f"{tr:,}",     '—', colors.HexColor('#6B7280')),
-        ('Total Views',     f"{tv:,}",     '—', colors.HexColor('#6B7280')),
-        ('Dest. Clicks',    str(td),       '❌ Critical' if td==0 else '✅', RED if td==0 else GREEN),
-    ], W))
-    story.append(sp(8))
+    story += [
+        KeepTogether([banner("🔻  Video Engagement Funnel", PINK, W), sp(8),
+                      c_funnel, sp(8),
+                      mktbl(fn_rows, fn_cw, PINK)]),
+        sp(14)
+    ]
 
+    # ── DESTINATION CTR AUDIT ──
+    note_txt = (
+        "All destination CTR values are 0.0000 — no clicks to WhatsApp or idealz.lk from any ad.  "
+        "Action required:  (1) Set destination URL in every TikTok ad.  "
+        "(2) Add 'Message Us' CTA button in ad settings.  "
+        "(3) Move CTA text/button to the first 3 seconds of the video."
+        if td==0 else
+        "Some ads have zero destination CTR — review those creatives."
+    )
+    # CTR table — 6 cols, precise widths
+    ctr_rows = [['Ad Name','Campaign','Dest. CTR','Dest.\nClicks','Impressions','Spend\n(USD)']]
+    for _,r in df.sort_values('Cost',ascending=False).iterrows():
+        ctr_rows.append([
+            Paragraph(shorten(r['Ad name'],28), PS('an',7.5,False)),
+            Paragraph(shorten(r['Campaign name'],20), PS('cn',7.5,False)),
+            f"{r['CTR (destination)']:.4f}",
+            str(int(r['Clicks (destination)'])),
+            f"{int(r['Impressions']):,}",
+            f"${r['Cost']:,.2f}",
+        ])
+    ctr_cw = [4.0*cm, 3.0*cm, 2.0*cm, 1.8*cm, 2.5*cm, W-13.3*cm]
+
+    story += [
+        KeepTogether([
+            banner("🔗  Destination CTR Audit", PINK, W), sp(6),
+            Paragraph(note_txt, PS('cn2',9,False,RED if td==0 else AMBER, sp=8, lft=4)),
+        ]),
+        mktbl(ctr_rows, ctr_cw, PINK),
+        sp(14)
+    ]
+
+    # ── MONTHLY BENCHMARKS ──
+    story += [
+        KeepTogether([
+            banner("📈  Monthly Benchmarks Summary", PINK, W), sp(8),
+            kpi_row([
+                ('Total Spend',      f"${ts:,.2f}",   '—', colors.HexColor('#6B7280')),
+                ('Total Impressions',f"{ti:,}",        '—', colors.HexColor('#6B7280')),
+                ('Total Reach',      f"{tr:,}",        '—', colors.HexColor('#6B7280')),
+                ('Total Views',      f"{tv:,}",        '—', colors.HexColor('#6B7280')),
+                ('Dest. Clicks',     str(td),
+                 '❌ Critical' if td==0 else '✅ OK',
+                 RED if td==0 else GREEN),
+            ], W),
+            sp(6),
+            Paragraph(
+                "Month-over-month comparison will appear here once you upload the previous period "
+                "TikTok export in the sidebar.",
+                PS('mo',9,False,AMBER,sp=6)) if prev_df is None else sp(2),
+        ]),
+        sp(16)
+    ]
+
+    # ── FOOTER ──
     story.append(footer_tbl(analyst, period, "TikTok Ads", W))
+
     doc.build(story)
     buf.seek(0)
     return buf.read()
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# WEBSITE PDF REPORT
-# ═════════════════════════════════════════════════════════════════════════════
 def generate_website_pdf(ga4_bundle, analyst, period, alerts=None, gsc_bundle=None):
     buf = io.BytesIO()
     W   = A4[0] - 4*cm
