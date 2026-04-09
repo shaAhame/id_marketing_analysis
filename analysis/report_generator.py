@@ -14,10 +14,18 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from analysis.chart_utils import (
-    bar_chart, hbar_chart, grouped_bar, pie_chart,
-    scatter_chart, funnel_chart, color_bar
-)
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from analysis.chart_utils import (
+        bar_chart, hbar_chart, grouped_bar, pie_chart,
+        scatter_chart, funnel_chart, color_bar
+    )
+except ImportError:
+    from chart_utils import (
+        bar_chart, hbar_chart, grouped_bar, pie_chart,
+        scatter_chart, funnel_chart, color_bar
+    )
 
 # ── Colours ──────────────────────────────────────────────────────────────────
 NAVY  = colors.HexColor('#1A1A2E')
