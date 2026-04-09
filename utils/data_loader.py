@@ -186,3 +186,36 @@ def auto_detect_file(file):
         return 'ga4_traffic_channel', load_ga4_traffic_channel(file)
 
     return 'unknown', None
+
+def load_ga4_generic(file):
+    """Load any GA4 CSV export — funnel exploration, landing pages etc."""
+    try:
+        return _read_ga4_csv(file)
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error loading GA4 file: {e}")
+        return None
+
+def load_gsc(file):
+    """Load Google Search Console CSV export."""
+    try:
+        raw = file.read().decode('utf-8')
+        file.seek(0)
+        import io
+        lines = raw.split('\n')
+        skip = 0
+        for i, line in enumerate(lines):
+            cells = [c.strip().lower() for c in line.split(',')]
+            if any(kw in cells for kw in ['query','page','clicks','impressions','ctr','position']):
+                skip = i
+                break
+        df = pd.read_csv(io.StringIO(raw), skiprows=skip)
+        df.columns = df.columns.str.strip()
+        df = df[df.iloc[:,0].astype(str).str.strip() != ''].dropna(how='all')
+        for col in df.columns[1:]:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        return df
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error loading Search Console file: {e}")
+        return None
