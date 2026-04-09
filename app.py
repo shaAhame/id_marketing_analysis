@@ -7,7 +7,7 @@ warnings.filterwarnings('ignore')
 from analysis.meta_analysis import run_meta_analysis
 from analysis.tiktok_analysis import run_tiktok_analysis
 from analysis.website_analysis import run_website_analysis
-from analysis.report_generator import generate_pdf_report, generate_excel_report
+from analysis.report_generator import generate_pdf_report, generate_excel_report, generate_meta_pdf, generate_tiktok_pdf, generate_website_pdf
 from utils.data_loader import (
     load_meta, load_tiktok,
     load_ga4_traffic_channel, load_ga4_traffic_source,
@@ -213,7 +213,8 @@ with tab3:
         run_website_analysis(ga4_bundle, gsc_bundle)
 
 with tab4:
-    st.markdown('<div class="section-header">Weekly Report Generator</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Report Generator — Download Separate Reports</div>', unsafe_allow_html=True)
+
     loaded = []
     if meta_df is not None:   loaded.append("Meta ✅")
     if tiktok_df is not None: loaded.append("TikTok ✅")
@@ -221,30 +222,85 @@ with tab4:
     if gsc_q_df is not None:  loaded.append("SEO ✅")
     st.markdown(f"**Files loaded:** {'  |  '.join(loaded) if loaded else 'None'}")
     st.markdown("---")
+
     c1,c2 = st.columns(2)
     with c1:
         analyst = st.text_input("Analyst name", value="Shakeeb")
         period  = st.text_input("Period label",
                     value=f"{start_date.strftime('%d %b')} – {end_date.strftime('%d %b %Y')}")
     with c2:
-        recs = st.text_area("Recommendations (one per line)", height=150,
-            value="Fix TikTok destination URLs — add WhatsApp link to all ads\nAdd UTM tags to Meta and TikTok ads\nShift 25% of Instagram budget to Facebook Feed\nSet up GA4 WhatsApp click conversion event\nScale iStore iPhone 16 Pro ad — best CPR Rs 4.02")
+        recs = st.text_area("Recommendations (one per line)", height=130,
+            value="Fix TikTok destination URLs — add WhatsApp link\nAdd UTM tags to Meta and TikTok ads\nShift 25% Instagram budget to Facebook Feed\nSet up GA4 WhatsApp click conversion event\nScale iStore iPhone 16 Pro — best CPR Rs 4.02")
+
     st.markdown("---")
+    st.markdown("### 📄 Separate Channel Reports")
+    st.caption("Each report contains all charts, tables and insights for that channel only.")
+
+    r1,r2,r3 = st.columns(3)
+
+    with r1:
+        st.markdown("**📘 Meta Ads Report**")
+        st.caption("FB vs IG · Ad sets · Top/bottom ads · Pacing · Placement · Fatigue · Monthly wrap")
+        if meta_df is None:
+            st.info("Upload Meta file first")
+        elif st.button("Generate Meta PDF", use_container_width=True, type="primary", key="meta_pdf"):
+            with st.spinner("Building Meta report..."):
+                pdf = generate_meta_pdf(meta_df, analyst, period, alerts, meta_prev)
+            st.download_button("⬇️ Download Meta Report", data=pdf,
+                file_name=f"iDealz_Meta_Report_{end_date.strftime('%Y%m%d')}.pdf",
+                mime="application/pdf", use_container_width=True, key="meta_dl")
+            st.success("✅ Meta PDF ready!")
+
+    with r2:
+        st.markdown("**🎵 TikTok Ads Report**")
+        st.caption("Campaigns · Watch time · Completion · Funnel · Destination CTR · Monthly benchmarks")
+        if tiktok_df is None:
+            st.info("Upload TikTok file first")
+        elif st.button("Generate TikTok PDF", use_container_width=True, type="primary", key="tt_pdf"):
+            with st.spinner("Building TikTok report..."):
+                pdf = generate_tiktok_pdf(tiktok_df, analyst, period, alerts, tiktok_prev)
+            st.download_button("⬇️ Download TikTok Report", data=pdf,
+                file_name=f"iDealz_TikTok_Report_{end_date.strftime('%Y%m%d')}.pdf",
+                mime="application/pdf", use_container_width=True, key="tt_dl")
+            st.success("✅ TikTok PDF ready!")
+
+    with r3:
+        st.markdown("**🌐 Website Report**")
+        st.caption("Sessions · Sources · Pages · Users · Events · SEO · UTM audit")
+        if not any_ga4:
+            st.info("Upload GA4 files first")
+        elif st.button("Generate Website PDF", use_container_width=True, type="primary", key="web_pdf"):
+            with st.spinner("Building Website report..."):
+                pdf = generate_website_pdf(
+                    {'traffic_channel':traffic_ch,'traffic_source':traffic_src,
+                     'users':users_df,'pages':pages_df,'events':events_df,
+                     'funnel':funnel_df,'landing':landing_df},
+                    analyst, period, alerts,
+                    {'queries':gsc_q_df,'pages':gsc_p_df})
+            st.download_button("⬇️ Download Website Report", data=pdf,
+                file_name=f"iDealz_Website_Report_{end_date.strftime('%Y%m%d')}.pdf",
+                mime="application/pdf", use_container_width=True, key="web_dl")
+            st.success("✅ Website PDF ready!")
+
+    st.markdown("---")
+    st.markdown("### 📋 Combined Reports")
+    st.caption("All 3 channels in one file — for team lead submission.")
+
     b1,b2 = st.columns(2)
     with b1:
-        if st.button("📄 Generate PDF Report", use_container_width=True, type="primary"):
-            with st.spinner("Building PDF..."):
+        if st.button("📄 Combined PDF Report", use_container_width=True, key="all_pdf"):
+            with st.spinner("Building combined PDF..."):
                 pdf = generate_pdf_report(
                     meta_df, tiktok_df, traffic_ch,
                     analyst, period, recs.strip().split('\n'), alerts,
                     extra={'traffic_source':traffic_src,'users':users_df,
                            'pages':pages_df,'events':events_df})
-            st.download_button("⬇️ Save PDF", data=pdf,
-                file_name=f"iDealz_Report_{end_date.strftime('%Y%m%d')}.pdf",
-                mime="application/pdf", use_container_width=True)
-            st.success("✅ PDF ready!")
+            st.download_button("⬇️ Save Combined PDF", data=pdf,
+                file_name=f"iDealz_Weekly_Report_{end_date.strftime('%Y%m%d')}.pdf",
+                mime="application/pdf", use_container_width=True, key="all_pdf_dl")
+            st.success("✅ Combined PDF ready!")
     with b2:
-        if st.button("📊 Generate Excel Report", use_container_width=True):
+        if st.button("📊 Excel Report (all data)", use_container_width=True, key="xl_btn"):
             with st.spinner("Building Excel..."):
                 xl = generate_excel_report(
                     meta_df, tiktok_df, traffic_ch,
@@ -254,5 +310,5 @@ with tab4:
             st.download_button("⬇️ Save Excel", data=xl,
                 file_name=f"iDealz_Analysis_{end_date.strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True)
+                use_container_width=True, key="xl_dl")
             st.success("✅ Excel ready!")
