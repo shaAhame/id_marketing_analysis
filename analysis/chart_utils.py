@@ -103,22 +103,38 @@ def grouped_bar(labels, series_dict, title, W=14, H=6, rotate=30):
     fig.tight_layout(pad=1.0)
     return _save(fig, W, H)
 
-def pie_chart(labels, values, title, W=8, H=6):
+def pie_chart(labels, values, title, W=8, H=7):
     colors = [C['blue'],C['pink'],C['teal'],C['amber'],
               C['green'],C['red'],C['grndk']]
     short  = _shorten(labels, 22)
+    # Filter zero values
+    filtered = [(l,v,c) for l,v,c in zip(short,values,colors[:len(values)]) if v>0]
+    if not filtered: filtered = list(zip(short,values,colors[:len(values)]))
+    fl, fv, fc = zip(*filtered) if filtered else (short,values,colors[:len(values)])
+
     fig, ax = plt.subplots(figsize=(W/2.54, H/2.54))
+    # Only show % label if slice > 5% to avoid overlap
+    def autopct_fn(pct):
+        return f'{pct:.1f}%' if pct > 5 else ''
+
     wedges, texts, autotexts = ax.pie(
-        values, labels=None, autopct='%1.1f%%',
-        colors=colors[:len(values)], startangle=90,
-        pctdistance=0.78,
-        wedgeprops={'linewidth':0.8,'edgecolor':'white'})
-    for at in autotexts: at.set_fontsize(7)
-    ax.legend(wedges, short, loc='lower center',
-              bbox_to_anchor=(0.5,-0.15), ncol=2,
-              fontsize=7, framealpha=0.5)
-    ax.set_title(title, fontsize=10, fontweight='bold', color=C['navy'], pad=8)
-    fig.tight_layout(pad=1.0)
+        fv, labels=None,
+        autopct=autopct_fn,
+        colors=list(fc), startangle=140,
+        pctdistance=0.82,
+        wedgeprops={'linewidth':1.0,'edgecolor':'white'})
+    for at in autotexts:
+        at.set_fontsize(7.5)
+        at.set_fontweight('bold')
+    # Legend below chart with enough space
+    ax.legend(wedges, fl,
+              loc='upper center',
+              bbox_to_anchor=(0.5, -0.08),
+              ncol=min(3, len(fl)),
+              fontsize=7, framealpha=0.5,
+              handlelength=1.2, handleheight=0.8)
+    ax.set_title(title, fontsize=10, fontweight='bold', color=C['navy'], pad=10)
+    fig.tight_layout(pad=1.5)
     return _save(fig, W, H)
 
 def scatter_chart(x, y, labels, title, hline=None, hline_label='',
@@ -183,30 +199,52 @@ def funnel_chart(stages, values, title, color=C['pink'], W=14, H=9):
 
 def color_bar(labels, values, title, cmap_name='RdYlGn', W=14, H=6,
               fmt=None, rotate=0, low_good=False):
+    """Auto-switches to horizontal bar when > 10 items to prevent label overlap."""
     vals  = np.array(values, dtype=float)
-    short = _shorten(labels, 16)
+    n     = len(vals)
     if len(vals)>0 and vals.max()>vals.min():
         normed = (vals-vals.min())/(vals.max()-vals.min())
     else:
         normed = np.ones_like(vals)*0.5
     if low_good: normed = 1-normed
-    cmap   = plt.get_cmap(cmap_name)
-    bcolors= [cmap(n) for n in normed]
-    fig, ax = plt.subplots(figsize=(W/2.54, H/2.54))
-    bars   = ax.bar(range(len(short)), vals, color=bcolors, width=0.55, zorder=3)
-    ax.set_xticks(range(len(short)))
-    ax.set_xticklabels(short, rotation=rotate,
-                       ha='right' if rotate else 'center', fontsize=7)
-    maxv = vals.max() if len(vals)>0 else 1
-    for bar,val in zip(bars,vals):
-        lbl = fmt.format(val) if fmt else f'{val:,.1f}'
-        ax.text(bar.get_x()+bar.get_width()/2,
-                bar.get_height()+maxv*0.02,
-                lbl, ha='center', va='bottom', fontsize=7, color=C['navy'])
-    ax.set_ylim(0, maxv*1.18)
-    _style(ax, title)
-    fig.tight_layout(pad=1.0)
-    return _save(fig, W, H)
+    cmap    = plt.get_cmap(cmap_name)
+    bcolors = [cmap(nv) for nv in normed]
+    maxv    = vals.max() if len(vals)>0 else 1
+
+    # Auto horizontal for many items
+    if n > 10:
+        short  = _shorten(labels, 30)
+        h_auto = max(H, n * 0.55)
+        fig, ax = plt.subplots(figsize=(W/2.54, h_auto/2.54))
+        bars = ax.barh(range(n), vals, color=bcolors, height=0.62, zorder=3)
+        ax.set_yticks(range(n))
+        ax.set_yticklabels(short, fontsize=7)
+        ax.invert_yaxis()
+        ax.set_xlim(0, maxv*1.18)
+        for bar, val in zip(bars, vals):
+            lbl = fmt.format(val) if fmt else f'{val:,.1f}'
+            ax.text(bar.get_width()+maxv*0.01,
+                    bar.get_y()+bar.get_height()/2,
+                    lbl, va='center', fontsize=7, color=C['navy'])
+        _style(ax, title, grid_axis='x')
+        fig.tight_layout(pad=1.0)
+        return _save(fig, W, h_auto)
+    else:
+        short  = _shorten(labels, 16)
+        fig, ax = plt.subplots(figsize=(W/2.54, H/2.54))
+        bars = ax.bar(range(n), vals, color=bcolors, width=0.55, zorder=3)
+        ax.set_xticks(range(n))
+        ax.set_xticklabels(short, rotation=rotate,
+                           ha='right' if rotate else 'center', fontsize=7)
+        for bar, val in zip(bars, vals):
+            lbl = fmt.format(val) if fmt else f'{val:,.1f}'
+            ax.text(bar.get_x()+bar.get_width()/2,
+                    bar.get_height()+maxv*0.02,
+                    lbl, ha='center', va='bottom', fontsize=7, color=C['navy'])
+        ax.set_ylim(0, maxv*1.18)
+        _style(ax, title)
+        fig.tight_layout(pad=1.0)
+        return _save(fig, W, H)
 
 def hist_chart(values, title, color=C['blue'], vline=None,
                vline_label='', xlabel='', ylabel='Count',
