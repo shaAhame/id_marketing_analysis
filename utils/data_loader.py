@@ -314,4 +314,3 @@ def load_gsc(file):
         import streamlit as st
         st.error(f"Error loading Search Console file: {e}")
         return None
-        
