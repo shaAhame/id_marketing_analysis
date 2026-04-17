@@ -113,75 +113,87 @@ def load_meta(file):
 # TIKTOK
 # ─────────────────────────────────────────
 def load_tiktok(file):
-    """Loads TikTok Ads Manager XLSX export."""
+    """Loads TikTok Ads Manager XLSX export — handles all export format variations."""
     try:
-        df = pd.read_excel(file)
+        import io as _bio
+        # Read file bytes to avoid seek issues
+        raw = file.read()
+        df = pd.read_excel(_bio.BytesIO(raw))
         df.columns = df.columns.str.strip()
 
-        # ── Normalise TikTok column names across export formats ──
+        # ── Step 1: Rename known column variations to standard names ──
         tt_rename = {
-            # Completion rate variations
-            'Video views at 100%':                        '100% video view rate',
-            'Video view rate (100%)':                     '100% video view rate',
-            'Complete video views':                       '100% video view rate',
-            'Video completions':                          '100% video view rate',
-            # Watch time variations
-            'Average video play time per video view':     'Average play time per video view',
-            'Avg. play time per view':                    'Average play time per video view',
-            'Average play time':                          'Average play time per video view',
+            # Completion rate
+            'Video views at 100%':                    '100% video view rate',
+            'Video view rate (100%)':                 '100% video view rate',
+            'Complete video views':                   '100% video view rate',
+            'Video completions':                      '100% video view rate',
+            # Watch time
+            'Average video play time per video view': 'Average play time per video view',
+            'Avg. play time per view':                'Average play time per video view',
+            'Average play time':                      'Average play time per video view',
             # 2-second views
-            '2-second video view':                        '2-second video views',
-            '2 second video views':                       '2-second video views',
-            # 6-second views
-            '6-second video view':                        '6-second video views',
-            '6 second video views':                       '6-second video views',
+            '2-second video view':                    '2-second video views',
+            '2 second video views':                   '2-second video views',
+            # 6-second views (only if not already present — handled below)
+            '6-second video view':                    '6-second video views',
+            '6 second video views':                   '6-second video views',
             # Destination clicks
-            'Click (destination)':                        'Clicks (destination)',
-            'Destination clicks':                         'Clicks (destination)',
+            'Click (destination)':                    'Clicks (destination)',
+            'Destination clicks':                     'Clicks (destination)',
             # All clicks
-            'Click (all)':                                'Clicks (all)',
-            'Total clicks':                               'Clicks (all)',
+            'Click (all)':                            'Clicks (all)',
+            'Total clicks':                           'Clicks (all)',
             # CTR
-            'CTR':                                        'CTR (destination)',
-            'Click-through rate (destination)':           'CTR (destination)',
+            'Click-through rate (destination)':       'CTR (destination)',
             # CPM
-            'Cost per 1,000 impressions':                 'CPM',
-            # Cost/spend
-            'Spend':                                      'Cost',
-            'Total cost':                                 'Cost',
-            # Campaign
-            'Campaign Name':                              'Campaign name',
-            # Ad name
-            'Ad Name':                                    'Ad name',
+            'Cost per 1,000 impressions':             'CPM',
+            # Cost
+            'Spend':                                  'Cost',
+            'Total cost':                             'Cost',
+            # Names
+            'Campaign Name':                          'Campaign name',
+            'Ad Name':                                'Ad name',
             # Video views
-            'Video View':                                 'Video views',
-            'Total video views':                          'Video views',
-            # Apr 2026 new export column names
-            'Video views at 100%':                         '100% video view rate',
-            '15-second focused views (paid views)':        '6-second video views',
+            'Video View':                             'Video views',
+            'Total video views':                      'Video views',
         }
-        df = df.rename(columns=tt_rename)
+        # Only rename columns that won't create duplicates
+        safe_rename = {k: v for k, v in tt_rename.items()
+                       if k in df.columns and v not in df.columns}
+        df = df.rename(columns=safe_rename)
 
-        # Ensure required columns exist — fill with 0 if not in this export
+        # ── Step 2: Handle 15-second col → 6-second only if needed ──
+        if '6-second video views' not in df.columns:
+            if '15-second focused views (paid views)' in df.columns:
+                df = df.rename(columns={'15-second focused views (paid views)': '6-second video views'})
+
+        # ── Step 3: Remove any duplicate columns ──
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        # ── Step 4: Add missing required columns as zero ──
         for _col in ['2-second video views', '100% video view rate', '6-second video views']:
             if _col not in df.columns:
                 df[_col] = 0
 
+        # ── Step 5: Filter out total rows ──
         df = df[~df['Campaign name'].astype(str).str.contains('Total', na=False)]
-        df = df[df['Campaign name'].astype(str).str.strip() != '']
+        df = df[df['Campaign name'].astype(str).str.strip().isin(['', '-']) == False]
 
+        # ── Step 6: Convert numeric columns ──
         numeric_cols = [
             'Impressions', 'Reach', 'Frequency', 'Cost',
             'Clicks (all)', 'CPC (destination)', 'Clicks (destination)',
             'CPM', 'CTR (destination)', 'Video views',
             '2-second video views', '6-second video views',
             '100% video view rate', 'Average play time per video view',
-            'Conversions', 'Cost per conversion', 'Result rate'
         ]
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        return df
+
+        return df if len(df) > 0 else None
+
     except Exception as e:
         st.error(f"Error loading TikTok file: {e}")
         return None
@@ -302,3 +314,4 @@ def load_gsc(file):
         import streamlit as st
         st.error(f"Error loading Search Console file: {e}")
         return None
+        
