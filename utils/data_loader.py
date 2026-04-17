@@ -58,6 +58,39 @@ def load_meta(file):
             df = pd.read_csv(file)
 
         df.columns = df.columns.str.strip()
+
+        # ── Normalise column names across different Meta export formats ──
+        # Meta sometimes appends (LKR) or changes column names slightly
+        rename_map = {
+            # CPM variations
+            'CPM (cost per 1,000 impressions) (LKR)':    'CPM (cost per 1,000 impressions)',
+            'CPM (Cost per 1,000 Impressions) (LKR)':    'CPM (cost per 1,000 impressions)',
+            'CPM (cost per 1,000 impressions)(LKR)':     'CPM (cost per 1,000 impressions)',
+            # CPC variations
+            'CPC (cost per link click) (LKR)':           'CPC (cost per link click)',
+            'CPC (Cost per Link Click) (LKR)':           'CPC (cost per link click)',
+            # Cost per result variations
+            'Cost per results':                          'Cost per result',
+            'Cost per Results':                          'Cost per result',
+            'Cost per result (LKR)':                     'Cost per result',
+            # Amount spent variations
+            'Amount spent (LKR) (LKR)':                  'Amount spent (LKR)',
+            'Spend (LKR)':                               'Amount spent (LKR)',
+            # CTR variations
+            'CTR (Link Click-Through Rate)':             'CTR (link click-through rate)',
+            # Link clicks variations
+            'Link Clicks':                               'Link clicks',
+            # Frequency
+            'Average frequency':                         'Frequency',
+            # Ad set name
+            'Ad Set Name':                               'Ad set name',
+            # Platform
+            'Platform/Device':                           'Platform',
+            # Placement
+            'Placement name':                            'Placement',
+        }
+        df = df.rename(columns=rename_map)
+
         # Drop summary/blank rows (first row is often a totals row)
         df = df[df['Ad name'].notna() & (df['Ad name'].astype(str).str.strip() != '')]
 
