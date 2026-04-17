@@ -23,12 +23,9 @@ def run_tiktok_analysis(df, tt_prev=None):
 
     # ── Normalise column names for this export format ─────────────────────────
     # 'Video views at 100%' → '100% video view rate'
-    for src_c, tgt_c in [
-        ('Video views at 100%',                 '100% video view rate'),
-        ('15-second focused views (paid views)', '6-second video views'),
-    ]:
-        if src_c in df.columns and tgt_c not in df.columns:
-            df = df.rename(columns={src_c: tgt_c})
+    if 'Video views at 100%' in df.columns and '100% video view rate' not in df.columns:
+        df = df.rename(columns={'Video views at 100%': '100% video view rate'})
+    # '15-second focused views (paid views)' stays as its own column — distinct metric
 
     # Ensure 2-second views exists (not in new export)
     if '2-second video views' not in df.columns:
@@ -154,27 +151,53 @@ def run_tiktok_analysis(df, tt_prev=None):
     # Drop-off summary
     avg_6s = df['6sec_%'].mean()
     avg_fl = df['comp_%'].mean()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Watched 6+ sec",   f"{avg_6s:.1f}%",
-              delta="Good" if avg_6s > 30 else "Low",
-              delta_color="normal" if avg_6s > 30 else "inverse")
-    c2.metric("Full Completion",  f"{avg_fl:.1f}%",
-              delta="Good" if avg_fl > 25 else "Low",
-              delta_color="normal" if avg_fl > 25 else "inverse")
-    c3.metric("Dest. Clicks",     str(total_dest),
-              delta="Critical" if total_dest == 0 else "OK",
-              delta_color="inverse" if total_dest == 0 else "normal")
+    if '15-second focused views (paid views)' in df.columns:
+        total_15sec = int(df['15-second focused views (paid views)'].sum())
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Watched 6+ sec",   f"{avg_6s:.1f}%",
+                  delta="Good" if avg_6s > 30 else "Low",
+                  delta_color="normal" if avg_6s > 30 else "inverse")
+        c2.metric("15-sec Focused",   f"{total_15sec:,}",
+                  delta="Paid views holding attention")
+        c3.metric("Full Completion",  f"{avg_fl:.1f}%",
+                  delta="Good" if avg_fl > 25 else "Low",
+                  delta_color="normal" if avg_fl > 25 else "inverse")
+        c4.metric("Dest. Clicks",     str(total_dest),
+                  delta="Critical" if total_dest == 0 else "OK",
+                  delta_color="inverse" if total_dest == 0 else "normal")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Watched 6+ sec",   f"{avg_6s:.1f}%",
+                  delta="Good" if avg_6s > 30 else "Low",
+                  delta_color="normal" if avg_6s > 30 else "inverse")
+        c2.metric("Full Completion",  f"{avg_fl:.1f}%",
+                  delta="Good" if avg_fl > 25 else "Low",
+                  delta_color="normal" if avg_fl > 25 else "inverse")
+        c3.metric("Dest. Clicks",     str(total_dest),
+                  delta="Critical" if total_dest == 0 else "OK",
+                  delta_color="inverse" if total_dest == 0 else "normal")
 
     st.markdown("**Benchmark:** 🔴 <10% Very weak | 🟡 10–25% Below avg | 🟢 25%+ Good")
 
+    # Build video metrics table — include 15-sec views if present
     vm_cols = ['Ad name', 'Campaign name', 'comp_%', '6sec_%',
                'Average play time per video view', 'Clicks (destination)']
-    vm_fmt  = {'comp_%': '{:.1f}%', '6sec_%': '{:.1f}%',
-               'Average play time per video view': '{:.1f}s'}
-    st.dataframe(df[vm_cols].rename(columns={
-        'comp_%': 'Completion %', '6sec_%': '6-sec %',
+    vm_rename = {
+        'comp_%': 'Completion %',
+        '6sec_%': '6-sec %',
         'Average play time per video view': 'Watch Time (s)',
-    }).style.format(vm_fmt), use_container_width=True)
+    }
+    vm_fmt = {
+        'comp_%': '{:.1f}%', '6sec_%': '{:.1f}%',
+        'Average play time per video view': '{:.1f}s',
+    }
+    if '15-second focused views (paid views)' in df.columns:
+        vm_cols.append('15-second focused views (paid views)')
+        vm_rename['15-second focused views (paid views)'] = '15-sec Focused Views'
+        vm_fmt['15-second focused views (paid views)'] = '{:,.0f}'
+
+    st.dataframe(df[vm_cols].rename(columns=vm_rename).style.format(vm_fmt),
+                 use_container_width=True)
 
     st.markdown("---")
 
