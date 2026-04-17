@@ -117,6 +117,56 @@ def load_tiktok(file):
     try:
         df = pd.read_excel(file)
         df.columns = df.columns.str.strip()
+
+        # ── Normalise TikTok column names across export formats ──
+        tt_rename = {
+            # Completion rate variations
+            'Video views at 100%':                        '100% video view rate',
+            'Video view rate (100%)':                     '100% video view rate',
+            'Complete video views':                       '100% video view rate',
+            'Video completions':                          '100% video view rate',
+            # Watch time variations
+            'Average video play time per video view':     'Average play time per video view',
+            'Avg. play time per view':                    'Average play time per video view',
+            'Average play time':                          'Average play time per video view',
+            # 2-second views
+            '2-second video view':                        '2-second video views',
+            '2 second video views':                       '2-second video views',
+            # 6-second views
+            '6-second video view':                        '6-second video views',
+            '6 second video views':                       '6-second video views',
+            # Destination clicks
+            'Click (destination)':                        'Clicks (destination)',
+            'Destination clicks':                         'Clicks (destination)',
+            # All clicks
+            'Click (all)':                                'Clicks (all)',
+            'Total clicks':                               'Clicks (all)',
+            # CTR
+            'CTR':                                        'CTR (destination)',
+            'Click-through rate (destination)':           'CTR (destination)',
+            # CPM
+            'Cost per 1,000 impressions':                 'CPM',
+            # Cost/spend
+            'Spend':                                      'Cost',
+            'Total cost':                                 'Cost',
+            # Campaign
+            'Campaign Name':                              'Campaign name',
+            # Ad name
+            'Ad Name':                                    'Ad name',
+            # Video views
+            'Video View':                                 'Video views',
+            'Total video views':                          'Video views',
+            # Apr 2026 new export column names
+            'Video views at 100%':                         '100% video view rate',
+            '15-second focused views (paid views)':        '6-second video views',
+        }
+        df = df.rename(columns=tt_rename)
+
+        # Ensure required columns exist — fill with 0 if not in this export
+        for _col in ['2-second video views', '100% video view rate', '6-second video views']:
+            if _col not in df.columns:
+                df[_col] = 0
+
         df = df[~df['Campaign name'].astype(str).str.contains('Total', na=False)]
         df = df[df['Campaign name'].astype(str).str.strip() != '']
 
