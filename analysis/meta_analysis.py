@@ -14,16 +14,24 @@ def run_meta_analysis(meta_curr, meta_prev=None):
     st.markdown('<div class="section-header">Meta Ads — Performance Overview</div>', unsafe_allow_html=True)
     df = meta_curr
 
-    total_spend   = df['Amount spent (LKR)'].sum()
-    total_results = int(df['Results'].sum())
+    # Safe column lookups — handles different Meta export column name formats
+    def col(name, fallbacks=None):
+        if name in df.columns: return df[name]
+        if fallbacks:
+            for fb in fallbacks:
+                if fb in df.columns: return df[fb]
+        return pd.Series([0]*len(df))
+
+    total_spend   = col('Amount spent (LKR)', ['Spend (LKR)']).sum()
+    total_results = int(col('Results').sum())
     avg_cpr       = total_spend / total_results if total_results > 0 else 0
-    avg_ctr       = df['CTR (link click-through rate)'].mean()
-    avg_cpm       = df['CPM (cost per 1,000 impressions)'].mean()
-    avg_cpc       = df['CPC (cost per link click)'].mean()
-    avg_freq      = df['Frequency'].mean()
-    total_impr    = int(df['Impressions'].sum())
-    total_reach   = int(df['Reach'].sum())
-    total_clicks  = int(df['Link clicks'].sum())
+    avg_ctr       = col('CTR (link click-through rate)', ['CTR (Link Click-Through Rate)']).mean()
+    avg_cpm       = col('CPM (cost per 1,000 impressions)', ['CPM (cost per 1,000 impressions) (LKR)']).mean()
+    avg_cpc       = col('CPC (cost per link click)', ['CPC (cost per link click) (LKR)']).mean()
+    avg_freq      = col('Frequency', ['Average frequency']).mean()
+    total_impr    = int(col('Impressions').sum())
+    total_reach   = int(col('Reach').sum())
+    total_clicks  = int(col('Link clicks', ['Link Clicks']).sum())
 
     # Deltas vs previous period
     def delta(curr, prev_df, col, agg='sum'):
