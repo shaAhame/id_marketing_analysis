@@ -69,6 +69,7 @@ def load_meta(file):
             # CPC variations
             'CPC (cost per link click) (LKR)':           'CPC (cost per link click)',
             'CPC (Cost per Link Click) (LKR)':           'CPC (cost per link click)',
+            'CPC (all) (LKR)':                           'CPC (all)',
             # Cost per result variations
             'Cost per results':                          'Cost per result',
             'Cost per Results':                          'Cost per result',
@@ -82,14 +83,27 @@ def load_meta(file):
             'Link Clicks':                               'Link clicks',
             # Frequency
             'Average frequency':                         'Frequency',
-            # Ad set name
+            # Ad set name — may be missing in breakdown exports, derive from Ad delivery
             'Ad Set Name':                               'Ad set name',
+            'Ad set':                                    'Ad set name',
             # Platform
             'Platform/Device':                           'Platform',
             # Placement
             'Placement name':                            'Placement',
+            # Ad delivery → use as ad set name proxy if missing
         }
         df = df.rename(columns=rename_map)
+
+        # If Ad set name is missing (new export format), create it from Ad delivery
+        if 'Ad set name' not in df.columns:
+            if 'Ad delivery' in df.columns:
+                df['Ad set name'] = df['Ad delivery'].astype(str).str.split('(').str[0].str.strip()
+            else:
+                df['Ad set name'] = 'Unknown Ad Set'
+
+        # If Campaign name is missing, create placeholder
+        if 'Campaign name' not in df.columns:
+            df['Campaign name'] = 'Campaign'
 
         # Drop summary/blank rows (first row is often a totals row)
         df = df[df['Ad name'].notna() & (df['Ad name'].astype(str).str.strip() != '')]
@@ -163,10 +177,8 @@ def load_tiktok(file):
                        if k in df.columns and v not in df.columns}
         df = df.rename(columns=safe_rename)
 
-        # ── Step 2: Handle 15-second col → 6-second only if needed ──
-        if '6-second video views' not in df.columns:
-            if '15-second focused views (paid views)' in df.columns:
-                df = df.rename(columns={'15-second focused views (paid views)': '6-second video views'})
+        # ── Step 2: Keep 15-second focused views as its own column ──
+        # '15-second focused views (paid views)' is a distinct metric — do NOT rename it
 
         # ── Step 3: Remove any duplicate columns ──
         df = df.loc[:, ~df.columns.duplicated()]
